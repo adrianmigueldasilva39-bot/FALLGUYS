@@ -290,14 +290,8 @@ static void checkFinish() {
     }
 }
 
-static void sysutilCallback(u64 status, u64 param, void *userdata) {
-    (void)param; (void)userdata;
-    if(status == SYSUTIL_EXIT_GAME){ quitGame = true; }
-}
-
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    sysUtilRegisterCallback(0, sysutilCallback, NULL);
     ioPadInit(7);
     srand(12345);
     tiny3d_Init(1024*1024);
