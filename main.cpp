@@ -5,16 +5,12 @@
 #include <sysutil/sysutil.h>
 #include <sysutil/video.h>
 #include <rsx/rsx.h>
-#include <rsx/gcm.h>
+#include <rsx/gcm_sys.h>
 #include <io/pad.h>
+#include <tiny3d.h>
 
 #define WIDTH 1280
 #define HEIGHT 720
-
-static gcmContextData *ctx = NULL;
-static u32 *displayBuffer[2];
-static u32 currBuffer = 0;
-static u32 *depthBuffer = NULL;
 
 enum GameState { MENU, HOWTO, PLAYING, VICTORY, ELIMINATED };
 static GameState state = MENU;
@@ -41,54 +37,16 @@ static float camX = 0, camZ = -8;
 
 static u32 skinColor[5] = {0xFFFF69B4, 0xFF3498DB, 0xFF2ECC71, 0xFFF1C40F, 0xFF9B59B6};
 
-static void rsxInitScreen() {
-    videoState st;
-    videoGetState(0, 0, &st);
-    videoConfiguration vconfig;
-    memset(&vconfig, 0, sizeof(vconfig));
-    vconfig.resolution = st.displayMode.resolution;
-    vconfig.format = VIDEO_BUFFER_FORMAT_XRGB;
-    vconfig.aspect = st.displayMode.aspect;
-    videoConfigure(0, &vconfig, NULL, 0);
-    videoGetState(0, 0, &st);
-    gcmContextData *c = NULL;
-    void *hostAddr = memalign(1024*1024, 1024*1024);
-    rsxInit(&c, 1024*1024, hostAddr);
-    ctx = c;
-    videoBuffer vbuf;
-    for(int i=0;i<2;i++){
-        videoGetBuffer(0, 0, &vbuf, 1);
-        displayBuffer[i] = (u32*)vbuf.address;
-    }
-    depthBuffer = (u32*)memalign(1024, WIDTH*HEIGHT*4);
-    memset(depthBuffer, 0, WIDTH*HEIGHT*4);
-    gcmSetDisplayBuffer(ctx, 0, (u32)displayBuffer[0], WIDTH*4, WIDTH);
-    gcmSetDisplayBuffer(ctx, 1, (u32)displayBuffer[1], WIDTH*4, WIDTH);
-    rsxSetViewport(ctx, 0, 0, WIDTH, HEIGHT, 0, 1);
-    gcmSetDepthBuffer(ctx, (u32)depthBuffer, WIDTH*4);
-}
-
-static void beginFrame() {
-    rsxSetClearColor(ctx, 0xFF1E88E5);
-    rsxSetClearDepthValue(ctx, 0xffff);
-    rsxSetClearSurface(ctx, GCM_CLEAR_R|GCM_CLEAR_G|GCM_CLEAR_B|GCM_CLEAR_A|GCM_CLEAR_Z);
-    rsxClearSurface(ctx, GCM_CLEAR_R|GCM_CLEAR_G|GCM_CLEAR_B|GCM_CLEAR_A|GCM_CLEAR_Z);
-}
-
-static void endFrame() {
-    rsxFlushBuffer(ctx);
-    gcmSetWaitFlip(ctx);
-    gcmSetFlip(ctx, currBuffer);
-    rsxFinish(ctx, 1);
-    currBuffer ^= 1;
-    gcmSetDisplayBuffer(ctx, currBuffer, (u32)displayBuffer[currBuffer], WIDTH*4, WIDTH);
-}
-
 static void drawRect(float x, float y, float w, float h, u32 color) {
-    if(x < -200 || y < -200 || x > WIDTH+200 || y > HEIGHT+200) return;
+    if(x < -300 || y < -300 || x > WIDTH+300 || y > HEIGHT+300) return;
     if(w < 1) w = 1; if(h < 1) h = 1;
-    rsxSetColor(ctx, color);
-    rsxDrawQuad(ctx, x, y, x+w, y, x+w, y+h, x, y+h);
+    tiny3d_SetPolygon(TINY3D_QUADS);
+    tiny3d_VertexPos(x, y, 0);
+    tiny3d_VertexColor(color);
+    tiny3d_VertexPos(x+w, y, 0);
+    tiny3d_VertexPos(x+w, y+h, 0);
+    tiny3d_VertexPos(x, y+h, 0);
+    tiny3d_End();
 }
 
 static void project3D(float wx, float wy, float wz, float *sx, float *sy, float *scale) {
@@ -165,7 +123,6 @@ static void drawMap() {
         float sx, sy, sc;
         project3D(0, 0, 20, &sx, &sy, &sc);
         drawRect(sx - 340, sy - 12, 680, 16, 0xFF000000);
-        drawRect(sx - 340, sy - 12, 680, 8, 0xFFFFFFFF);
         for(int k=0;k<12;k++) drawRect(sx-340+k*56, sy-12, 28, 16, (k%2)?0xFFFFFFFF:0xFF000000);
     } else {
         float sx, sy, sc;
@@ -186,20 +143,14 @@ static void drawMenu() {
     drawRect(280, 60, 720, 78, 0xFFFFFFFF);
     drawRect(300, 80, 680, 38, 0xFFFF69B4);
     drawRect(340, 230, 600, 36, 0xFF000000);
-    const char *labels[3] = {0,0,0};
-    (void)labels;
     for(int i=0;i<3;i++){
         u32 c = (i==menuSel)?0xFFFFD700:0xFFFFFFFF;
         drawRect(440, 300 + i*85, 400, 62, c);
         drawRect(440, 300 + i*85, 400, 8, 0xFF000000);
-        drawRect(470, 322 + i*85, 340 - i*40, 18, 0xFF000000);
-        if(i==0) drawRect(470, 322, 200, 18, 0xFF000000);
+        drawRect(470, 322 + i*85, 200, 18, 0xFF000000);
     }
     drawRect(80, 620, 1120, 44, 0xFF000000);
     drawRect(100, 660, 1080, 22, 0xFF87CEEB);
-    float sx=200, sy=520;
-    Guy tmp; tmp.x=-3; tmp.y=0; tmp.z=-2; tmp.skin=0; tmp.finished=false; tmp.isPlayer=false;
-    (void)sx; (void)sy;
     for(int i=0;i<5;i++){
         Guy g; g.x=-4+i*2; g.y=0; g.z=-2; g.skin=i; g.finished=false; g.isPlayer=false;
         drawFallGuy(&g);
@@ -223,7 +174,6 @@ static void drawHUD() {
     drawRect(0,0,WIDTH,54, 0xCC000000);
     float pct = timer/90.0f; if(pct<0) pct=0; if(pct>1) pct=1;
     drawRect(20, 16, 300*pct, 22, 0xFFFFD700);
-    drawRect(20, 16, 300, 22, 0x00FFFFFF);
     drawRect(360, 14, 140, 26, 0xFFFF69B4);
     drawRect(540, 14, 140, 26, 0xFF3498DB);
     drawRect(720, 14, 140, 26, 0xFF2ECC71);
@@ -266,8 +216,6 @@ static void updatePlayer(padData *pad) {
     if(player.x < -7.5f) player.x=-7.5f;
     if(player.x > 7.5f) player.x=7.5f;
     if(player.z < -15) player.z=-15;
-    if(player.rot < ax*10) player.rot += 0.2f;
-    if(player.rot > ax*10) player.rot -= 0.2f;
     camX = player.x*0.5f;
     camZ = player.z - 6;
 }
@@ -315,13 +263,8 @@ static void checkFinish() {
             else if(phase==1){ phase=2; player.z=-14; player.x=0; for(int i=0;i<11;i++){ if(!bots[i].finished){ bots[i].z=-14+(i%3)*0.8f; } } timer=90.0f; player.finished=false; }
         }
         for(int i=0;i<11;i++){
-            if(!bots[i].finished && bots[i].z >= 20.0f){
-                bots[i].finished=true;
-            }
+            if(!bots[i].finished && bots[i].z >= 20.0f) bots[i].finished=true;
         }
-        int still = 0;
-        for(int i=0;i<11;i++) if(!bots[i].finished) still++;
-        if(phase==0 && still==0){ }
     } else {
         float dx = player.x - 0;
         float dz = player.z - 22.0f;
@@ -349,8 +292,6 @@ static void checkFinish() {
 static void sysutilCallback(u64 status, u64 param, void *userdata) {
     (void)param; (void)userdata;
     if(status == SYSUTIL_EXIT_GAME){ quitGame = true; }
-    if(status == SYSUTIL_DRAW_BEGIN){ }
-    if(status == SYSUTIL_DRAW_END){ }
 }
 
 int main(int argc, char *argv[]) {
@@ -358,7 +299,8 @@ int main(int argc, char *argv[]) {
     sysUtilRegisterCallback(0, sysutilCallback, NULL);
     ioPadInit(7);
     srand(12345);
-    rsxInitScreen();
+    tiny3d_Init(1024*1024);
+    tiny3d_Project(1000.0f, 1.0f, 0.01f, 100.0f, 0.0f, 0.0f);
     resetRace();
     padData pad;
     memset(&pad, 0, sizeof(pad));
@@ -367,6 +309,8 @@ int main(int argc, char *argv[]) {
         ioPadGetData(0, &pad);
         if(pad.BTN_SELECT){ quitGame=true; break; }
         if(menuCooldown > 0) menuCooldown--;
+        tiny3d_Clear(0xFF1E88E5, TINY3D_CLEAR_ALL);
+        tiny3d_Project(1000.0f, 1.0f, 0.01f, 100.0f, 0.0f, 0.0f);
         if(state==MENU){
             if(menuCooldown==0){
                 if(pad.ANA_L_V > 180 || pad.BTN_DOWN){ menuSel++; if(menuSel>2) menuSel=0; menuCooldown=12; }
@@ -378,11 +322,11 @@ int main(int argc, char *argv[]) {
                     else { quitGame=true; break; }
                 }
             }
-            beginFrame(); drawMenu(); endFrame();
+            drawMenu();
         } else if(state==HOWTO){
             if(pad.BTN_CROSS && menuCooldown==0){ state=MENU; menuCooldown=15; }
             if(pad.BTN_CIRCLE && menuCooldown==0){ state=MENU; menuCooldown=15; }
-            beginFrame(); drawHowTo(); endFrame();
+            drawHowTo();
         } else if(state==PLAYING){
             frame++;
             timer -= 1.0f/60.0f;
@@ -390,23 +334,21 @@ int main(int argc, char *argv[]) {
             updateBots();
             checkFinish();
             if(pad.BTN_CIRCLE && menuCooldown==0){ state=MENU; menuCooldown=15; }
-            beginFrame();
             drawMap();
             for(int i=0;i<11;i++) drawFallGuy(&bots[i]);
             drawFallGuy(&player);
             drawHUD();
-            endFrame();
         } else if(state==VICTORY || state==ELIMINATED){
             if(pad.BTN_CROSS && menuCooldown==0){ resetRace(); phase=0; state=MENU; menuCooldown=15; }
             if(pad.BTN_CIRCLE && menuCooldown==0){ resetRace(); phase=0; state=MENU; menuCooldown=15; }
-            beginFrame();
             drawMap();
             drawFallGuy(&player);
             drawEnd(state==VICTORY);
-            endFrame();
         }
+        tiny3d_Flip();
         sysUtilCheckCallback();
     }
+    tiny3d_Close();
     ioPadEnd();
     sysUtilExitGame();
     return 0;
