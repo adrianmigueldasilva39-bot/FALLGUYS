@@ -4,6 +4,7 @@
 #include <math.h>
 #include <sysutil/sysutil.h>
 #include <sysutil/video.h>
+#include <sys/process.h>
 #include <rsx/rsx.h>
 #include <rsx/gcm_sys.h>
 #include <io/pad.h>
@@ -348,8 +349,7 @@ int main(int argc, char *argv[]) {
         tiny3d_Flip();
         sysUtilCheckCallback();
     }
-    tiny3d_Close();
     ioPadEnd();
-    sysUtilExitGame();
+    sysProcessExit(0);
     return 0;
 }
