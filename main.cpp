@@ -301,7 +301,7 @@ int main(int argc, char *argv[]) {
     ioPadInit(7);
     srand(12345);
     tiny3d_Init(1024*1024);
-    tiny3d_Project3D(1000.0f, 1.0f, 0.01f, 100.0f, 0.0f, 0.0f, 0.0f);
+    tiny3d_Project2D();
     resetRace();
     padData pad;
     memset(&pad, 0, sizeof(pad));
@@ -311,7 +311,7 @@ int main(int argc, char *argv[]) {
         if(pad.BTN_SELECT){ quitGame=true; break; }
         if(menuCooldown > 0) menuCooldown--;
         tiny3d_Clear(0xFF1E88E5, TINY3D_CLEAR_ALL);
-        tiny3d_Project3D(1000.0f, 1.0f, 0.01f, 100.0f, 0.0f, 0.0f, 0.0f);
+        tiny3d_Project2D();
         if(state==MENU){
             if(menuCooldown==0){
                 if(pad.ANA_L_V > 180 || pad.BTN_DOWN){ menuSel++; if(menuSel>2) menuSel=0; menuCooldown=12; }
